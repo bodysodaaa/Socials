@@ -373,6 +373,11 @@
   @media (max-height: 700px) {
     #main { justify-content: flex-start; padding-top: 40px; }
   }
+  #blood-canvas {
+    position: fixed; top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none; z-index: 3;
+  }
 </style>
 </head>
 <body>
@@ -383,6 +388,7 @@
 <video id="bg-video" loop playsinline src="bg.mp4"></video>
 <div class="grain"></div>
 <div class="vignette"></div>
+<canvas id="blood-canvas"></canvas>
 
 <!-- Enter overlay -->
 <div id="enter-overlay">
@@ -627,6 +633,131 @@
     ws.onclose = () => setTimeout(connectWS, 5000);
   })();
 
+})();
+</script>
+
+<script>
+(function() {
+  const canvas = document.getElementById('blood-canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H, drips = [];
+
+  function resize() {
+    W = canvas.width  = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  function createDrip() {
+    const x = rand(0, W);
+    const bulbR = rand(4, 10);
+    return {
+      x, y: -bulbR,
+      bulbR,
+      speed: rand(0.4, 1.4),
+      tail: [],
+      maxTail: Math.floor(rand(60, 200)),
+      alpha: rand(0.55, 0.9),
+      dripping: true,
+      poolW: 0,
+      poolTargetW: rand(6, 18),
+      poolY: 0,
+      done: false,
+      pause: 0,
+    };
+  }
+
+  for (let i = 0; i < 18; i++) {
+    const d = createDrip();
+    d.y = rand(-200, H * 0.6);
+    drips.push(d);
+  }
+
+  function drawDrip(d) {
+    ctx.save();
+    ctx.globalAlpha = d.alpha;
+
+    if (d.tail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(d.tail[0].x, d.tail[0].y);
+      for (let i = 1; i < d.tail.length; i++) {
+        const t = i / d.tail.length;
+        const w = d.bulbR * 0.55 * (1 - t * 0.7);
+        ctx.lineWidth = Math.max(0.8, w * 2);
+        ctx.strokeStyle = `rgb(${Math.floor(100 + 20*t)},0,0)`;
+        ctx.lineTo(d.tail[i].x, d.tail[i].y);
+      }
+      ctx.stroke();
+    }
+
+    if (d.dripping) {
+      const grad = ctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.bulbR);
+      grad.addColorStop(0, '#cc0000');
+      grad.addColorStop(1, '#6b0000');
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.bulbR, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+
+    if (!d.dripping && d.poolW > 0) {
+      const py = d.poolY;
+      const pw = d.poolW;
+      const grad = ctx.createRadialGradient(d.x, py, 0, d.x, py, pw);
+      grad.addColorStop(0, '#aa0000');
+      grad.addColorStop(1, 'rgba(60,0,0,0)');
+      ctx.beginPath();
+      ctx.ellipse(d.x, py, pw, pw * 0.28, 0, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  function tick() {
+    ctx.clearRect(0, 0, W, H);
+
+    drips.forEach((d, i) => {
+      if (d.done) return;
+
+      if (d.dripping) {
+        d.tail.push({ x: d.x, y: d.y });
+        if (d.tail.length > d.maxTail) d.tail.shift();
+        d.y += d.speed;
+
+        if (d.y > H + d.bulbR + 20) {
+          d.dripping = false;
+          d.poolY = H - 2;
+          d.pause = 120;
+        }
+      } else {
+        if (d.pause > 0) { d.pause--; }
+        else {
+          d.poolW = Math.min(d.poolW + 0.25, d.poolTargetW);
+          if (d.poolW >= d.poolTargetW) {
+            setTimeout(() => { drips[i] = createDrip(); }, rand(500, 3000));
+            d.done = true;
+          }
+        }
+      }
+
+      drawDrip(d);
+    });
+
+    requestAnimationFrame(tick);
+  }
+
+  tick();
+
+  setInterval(() => {
+    if (drips.filter(d => !d.done).length < 14) {
+      drips.push(createDrip());
+    }
+  }, 800);
 })();
 </script>
 </body>
